@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Background-capable Alarm Clock (Demo)</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#60a5fa;--muted:#94a3b8}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;color:#e6eef8;background:linear-gradient(180deg,#071025 0%, #081226 60%);}
+    .wrap{max-width:880px;margin:28px auto;padding:20px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    header{display:flex;gap:16px;align-items:center}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:4px 0 12px;color:var(--muted);font-size:13px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    label{font-size:13px;color:var(--muted)}
+    input,select,button{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    .card{padding:14px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);margin-top:14px}
+    .alarms{margin-top:12px}
+    .alarm{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:10px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));}
+    .alarm .meta{display:flex;gap:12px;align-items:center}
+    .muted{color:var(--muted);font-size:13px}
+    .pill{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.03);font-size:13px}
+    .btn{cursor:pointer}
+    .danger{background:#3b0f0f}
+    .ok{background:#063047}
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    .days{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+    .days label{font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Alarm Clock (Browser)</h1>
+        <p class="lead">Set alarms that persist in this browser. Now supports day-of-week selection.</p>
+      </div>
+    </header><div class="card">
+  <div class="controls">
+    <div>
+      <label>Alarm time (time only)</label><br>
+      <input id="time" type="time">
+    </div>
+    <div>
+      <label>Label</label><br>
+      <input id="label" placeholder="Wake up!">
+    </div>
+    <div>
+      <label>Snooze (minutes)</label><br>
+      <input id="snooze" type="number" min="1" value="5" style="width:90px">
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:flex-end;">
+      <button id="add" class="btn">Add alarm</button>
+    </div>
+  </div>
+  <div class="days">
+    <label><input type="checkbox" class="day" value="0"> Sun</label>
+    <label><input type="checkbox" class="day" value="1"> Mon</label>
+    <label><input type="checkbox" class="day" value="2"> Tue</label>
+    <label><input type="checkbox" class="day" value="3"> Wed</label>
+    <label><input type="checkbox" class="day" value="4"> Thu</label>
+    <label><input type="checkbox" class="day" value="5"> Fri</label>
+    <label><input type="checkbox" class="day" value="6"> Sat</label>
+  </div>
+
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button id="allowNotif" class="btn">Allow Notifications</button>
+    <button id="enableSound" class="btn">Enable Sound</button>
+    <button id="installPWA" class="btn">Install (PWA)</button>
+    <button id="testAlarm" class="btn">Test alarm now</button>
+    <span class="muted" id="status">Status: ready</span>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 8px 0">Your Alarms</h3>
+  <div class="alarms" id="alarmsList"></div>
+  <div class="small muted">Alarms are stored in localStorage. They repeat on selected days of the week.</div>
+</div>
+
+<footer>
+  <div class="small">Notes: Browser tabs can throttle JavaScript when in background. This demo uses Notifications API and sound when possible. For reliability, install as a PWA.</div>
+</footer>
+
+  </div>  <audio id="alarmAudio" preload="auto">
+    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
+  </audio>  <script>
+  const SW_CODE = `self.addEventListener('install', e => { self.skipWaiting(); });
+  self.addEventListener('activate', e => { self.clients.claim(); });
+  self.addEventListener('message', ev => {
+    const data = ev.data || {};
+    if (data && data.type === 'show-notification') {
+      self.registration.showNotification(data.title||'Alarm', data.options||{});
+    }
+  });
+  self.addEventListener('notificationclick', ev => {
+    ev.notification.close();
+    ev.waitUntil(clients.matchAll({type:'window'}).then(list => list.length>0?list[0].focus():clients.openWindow('/')));
+  });`;
+
+  (function(){
+    const timeEl=document.getElementById('time');
+    const labelEl=document.getElementById('label');
+    const snoozeEl=document.getElementById('snooze');
+    const addBtn=document.getElementById('add');
+    const alarmsList=document.getElementById('alarmsList');
+    const allowNotif=document.getElementById('allowNotif');
+    const enableSound=document.getElementById('enableSound');
+    const status=document.getElementById('status');
+    const testAlarm=document.getElementById('testAlarm');
+    const installBtn=document.getElementById('installPWA');
+    const audio=document.getElementById('alarmAudio');
+
+    let alarms=[]; let audioUnlocked=false; let swRegistration=null;
+
+    if('serviceWorker' in navigator){
+      const blob=new Blob([SW_CODE],{type:'application/javascript'});
+      const swUrl=URL.createObjectURL(blob);
+      navigator.serviceWorker.register(swUrl).then(r=>swRegistration=r).catch(err=>console.warn('SW reg failed',err));
+    }
+
+    function save(){localStorage.setItem('alarms.v2',JSON.stringify(alarms));}
+    function load(){try{alarms=JSON.parse(localStorage.getItem('alarms.v2')||'[]');}catch(e){alarms=[];}}
+
+    function render(){
+      alarmsList.innerHTML='';
+      if(alarms.length===0){alarmsList.innerHTML='<div class="muted">No alarms set</div>';return;}
+      alarms.forEach(a=>{
+        const el=document.createElement('div'); el.className='alarm';
+        const meta=document.createElement('div'); meta.className='meta';
+        const when=document.createElement('div');
+        when.innerHTML=`<div class="pill">${a.time} (${a.days.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(',')})</div>`;
+        const lab=document.createElement('div'); lab.innerHTML=`<div class="muted">${a.label||'Alarm'}</div>`;
+        meta.appendChild(when); meta.appendChild(lab);
+        const actions=document.createElement('div'); actions.className='row';
+        const toggle=document.createElement('button'); toggle.textContent=a.enabled?'On':'Off'; toggle.className='btn';
+        toggle.onclick=()=>{a.enabled=!a.enabled;save();render();};
+        const del=document.createElement('button'); del.textContent='Delete'; del.className='btn';
+        del.onclick=()=>{alarms=alarms.filter(x=>x.id!==a.id);save();render();};
+        actions.appendChild(toggle); actions.appendChild(del);
+        el.appendChild(meta); el.appendChild(actions);
+        alarmsList.appendChild(el);
+      });
+    }
+
+    function addAlarm(time,label,snoozeMins,days){
+      if(days.length===0) return alert('Please select at least one day');
+      const id='a'+Date.now()+Math.floor(Math.random()*9999);
+      alarms.push({id,time,label,snooze:snoozeMins||5,days,enabled:true});
+      save();render();status.textContent='Status: alarm added';
+    }
+
+    addBtn.onclick=()=>{
+      if(!timeEl.value) return alert('Please pick a time');
+      const days=[...document.querySelectorAll('.day:checked')].map(d=>Number(d.value));
+      addAlarm(timeEl.value,labelEl.value||'Alarm',Number(snoozeEl.value)||5,days);
+    };
+
+    allowNotif.onclick=async()=>{if(!('Notification' in window))return alert('No notification support');const p=await Notification.requestPermission();status.textContent='Notifications: '+p;};
+    enableSound.onclick=()=>{const playPromise=audio.play();if(playPromise!==undefined){playPromise.then(()=>{audio.pause();audio.currentTime=0;audioUnlocked=true;status.textContent='Sound: enabled';}).catch(e=>alert('Please click to enable audio'));}};
+    testAlarm.onclick=()=>{triggerAlarm({label:'Test alarm',time:new Date().toLocaleTimeString(),id:'test'});};
+
+    function triggerAlarm(al){try{audio.currentTime=0;audio.play().catch(()=>{});}catch(e){}const title=al.label||'Alarm';const options={body:al.time,vibrate:[200,100,200],tag:al.id,renotify:true};if(swRegistration&&swRegistration.active){swRegistration.active.postMessage({type:'show-notification',title,options});}else if(Notification.permission==='granted'){new Notification(title,options);}status.textContent='Alarm fired: '+title;}
+
+    function checkLoop(){const now=new Date();const hh=String(now.getHours()).padStart(2,'0');const mm=String(now.getMinutes()).padStart(2,'0');const curTime=`${hh}:${mm}`;const day=now.getDay();alarms.forEach(a=>{if(!a.enabled)return;if(a.time===curTime && a.days.includes(day)){triggerAlarm(a);}});}
+
+    load();render();setInterval(checkLoop,1000);
+    window.addEventListener('storage',()=>{load();render();});
+  })();
+  </script></body>
+</html>
